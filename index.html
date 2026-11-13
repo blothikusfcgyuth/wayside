@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0F6B57">
+<title>Wayside – audio walking tours of the places around you</title>
+<meta name="description" content="Wayside turns your location into a walking tour. Find nearby landmarks and hear their story read aloud, sourced from Wikipedia.">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://YOUR-SITE-URL/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Wayside">
+<meta property="og:title" content="Wayside – audio walking tours of the places around you">
+<meta property="og:description" content="Find nearby landmarks and hear their story read aloud, sourced from Wikipedia. Free, no sign-up.">
+<meta property="og:url" content="https://YOUR-SITE-URL/">
+<meta property="og:image" content="https://YOUR-SITE-URL/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Wayside: audio walking tours of the places around you">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Wayside – audio walking tours of the places around you">
+<meta name="twitter:description" content="Find nearby landmarks and hear their story read aloud, sourced from Wikipedia.">
+<meta name="twitter:image" content="https://YOUR-SITE-URL/og-image.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{--bg:#F3F5F4;--ink:#14201C;--mute:#55655F;--line:#D3DBD8;--acc:#0F6B57;--on:#fff;--sel:#D9822B;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161C1A;--ink:#EAF1EE;--mute:#9DB0A9;--line:#2B3633;--acc:#4FC3A1;--on:#0E1513;--sel:#F0A050;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#161C1A;--ink:#EAF1EE;--mute:#9DB0A9;--line:#2B3633;--acc:#4FC3A1;--on:#0E1513;--sel:#F0A050;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{display:grid;grid-template-rows:1fr auto;background:var(--bg);color:var(--ink);font:400 16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;padding-top:env(safe-area-inset-top,0px)}
+#map{min-height:0;background:var(--line)}
+#sheet{max-height:48vh;overflow:auto;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line)}
+button,select{font:inherit;color:inherit}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn{min-height:44px;padding:0 16px;border-radius:8px;border:1px solid var(--ink);background:none;font-weight:600;cursor:pointer}
+.btn.p{background:var(--acc);border-color:var(--acc);color:var(--on)}
+select{min-height:44px;border-radius:8px;border:1px solid var(--line);background:var(--bg);padding:0 8px}
+:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+#msg{margin:8px 0;color:var(--mute);font-size:15px}
+.pl{display:flex;justify-content:space-between;gap:12px;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:12px 0;min-height:48px;cursor:pointer}
+.pl span{color:var(--mute);white-space:nowrap}
+h1{font-size:22px;margin:4px 0 8px;line-height:1.2}
+#script{margin:12px 0}
+#script span{display:inline;padding:1px 0}
+#script span.on{background:color-mix(in srgb,var(--sel) 35%,transparent);border-radius:3px}
+.fine{font-size:13px;color:var(--mute);margin-top:12px}
+a{color:var(--acc)}
+.chb{display:block;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:12px 0 2px;font-weight:700;font-size:17px;cursor:pointer;min-height:44px}
+.cue{margin:0 0 4px;color:var(--mute);font-style:italic}
+</style>
+</head>
+<body>
+<div id="map" aria-label="Map"></div>
+<div id="sheet">
+  <div class="bar">
+    <button class="btn p" id="loc">My location</button>
+    <button class="btn" id="here">Search this area</button>
+    <select id="lang" aria-label="Language">
+      <option value="en">English</option><option value="es">Español</option><option value="fr">Français</option>
+      <option value="de">Deutsch</option><option value="it">Italiano</option><option value="pt">Português</option>
+    </select>
+  </div>
+  <div id="msg" role="status">Tap My location to find places near you.</div>
+  <div id="list"></div>
+  <div id="detail" hidden>
+    <button class="btn" id="back">Back to list</button>
+    <h1 id="ttl"></h1>
+    <div class="bar"><button class="btn p" id="play">Play tour</button></div>
+    <p class="fine" id="note" role="status"></p>
+    <div id="script"></div>
+    <p class="fine" id="src"></p>
+  </div>
+  <p class="fine">Map © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors. Place text from Wikipedia, licensed CC BY-SA 4.0.</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const $=s=>document.querySelector(s);
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const supported=['en','es','fr','de','it','pt'];
+let lang=(navigator.language||'en').slice(0,2);if(!supported.includes(lang))lang='en';
+$('#lang').value=lang;
+let places=[],markers={},cur=null,sents=[],idx=0,playing=false,tok=0,me=null;
+
+const map=L.map('map',{zoomControl:false}).setView([20,0],2);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+L.control.zoom({position:'topright'}).addTo(map);
+
+const msg=t=>{$('#msg').textContent=t};
+const dist=(a,b,c,d)=>{const r=Math.PI/180,x=(c-a)*r,y=(d-b)*r,h=Math.sin(x/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin(y/2)**2;return 12742000*Math.asin(Math.sqrt(h))};
+const fmt=m=>m<1000?Math.round(m/10)*10+' m':(m/1000).toFixed(1)+' km';
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function locate(){
+  if(!navigator.geolocation){msg('This browser can’t share your location.');return}
+  msg('Finding you…');
+  navigator.geolocation.getCurrentPosition(p=>{
+    const {latitude:la,longitude:lo}=p.coords;
+    if(me)me.remove();
+    me=L.circleMarker([la,lo],{radius:8,color:'#fff',weight:3,fillColor:'#2563EB',fillOpacity:1}).addTo(map);
+    map.setView([la,lo],15);search(la,lo);
+  },e=>msg(e.code===1?'Location is blocked. Allow it in your browser settings, or pan the map and tap Search this area.':'Couldn’t get your location. Pan the map and tap Search this area.'),
+  {enableHighAccuracy:true,timeout:15000});
+}
+
+async function search(la,lo){
+  msg('Looking for places…');stop();
+  const u='https://'+lang+'.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=geosearch&ggscoord='+la+'|'+lo+
+    '&ggsradius=2500&ggslimit=20&prop=extracts|coordinates|info&inprop=url&exintro=1&explaintext=1&exlimit=max&colimit=max';
+  try{
+    const r=await fetch(u),d=await r.json(),pg=Object.values((d.query&&d.query.pages)||{});
+    places=pg.filter(p=>p.coordinates&&p.extract&&p.extract.length>80).map(p=>({
+      id:p.pageid,title:p.title,text:p.extract,url:p.fullurl,lat:p.coordinates[0].lat,lon:p.coordinates[0].lon,
+      d:dist(la,lo,p.coordinates[0].lat,p.coordinates[0].lon)})).sort((a,b)=>a.d-b.d);
+  }catch(e){msg('Couldn’t reach Wikipedia. Check your connection and try again.');return}
+  Object.values(markers).forEach(m=>m.remove());markers={};
+  places.forEach(p=>{
+    markers[p.id]=L.circleMarker([p.lat,p.lon],{radius:9,color:'#fff',weight:2,fillColor:css('--acc'),fillOpacity:1}).addTo(map).on('click',()=>pick(p.id));
+    markers[p.id].bindTooltip(p.title);
+  });
+  show(false);
+  $('#list').innerHTML=places.map(p=>'<button class="pl" data-id="'+p.id+'"><b>'+esc(p.title)+'</b><span>'+fmt(p.d)+'</span></button>').join('');
+  msg(places.length?places.length+' places nearby. Pick one to hear its story.':'No places with articles found here. Try another area or language.');
+}
+
+function script(p){
+  const clean=p.text.replace(/\s*\([^)]*\)/g,'').replace(/\s+/g,' ').trim();
+  const all=clean.split(/(?<=[.!?])\s+(?=[\p{Lu}0-9"“])/u),out=[];let n=0;
+  for(const s of all){if(n+s.length>1100&&out.length>=3)break;out.push(s);n+=s.length}
+  const t={en:['Welcome to ','That’s the story of ','. Tap another place on the map to keep exploring.'],
+    es:['Bienvenido a ','Esa es la historia de ','. Toca otro lugar en el mapa para seguir explorando.'],
+    fr:['Bienvenue à ','Voilà l’histoire de ','. Touchez un autre lieu sur la carte pour continuer.'],
+    de:['Willkommen bei ','Das war die Geschichte von ','. Tippe auf einen anderen Ort auf der Karte, um weiterzuentdecken.'],
+    it:['Benvenuto a ','Questa è la storia di ','. Tocca un altro luogo sulla mappa per continuare.'],
+    pt:['Bem-vindo a ','Essa é a história de ','. Toque em outro lugar no mapa para continuar.']}[lang];
+  return [t[0]+p.title+'.',...out,t[1]+p.title+t[2].replace(/^\.\s/,'. ')];
+}
+
+async function pick(id){
+  stop();cur=places.find(p=>p.id===id);if(!cur)return;
+  Object.entries(markers).forEach(([k,m])=>m.setStyle({fillColor:+k===id?css('--sel'):css('--acc'),radius:+k===id?12:9}));
+  map.panTo([cur.lat,cur.lon]);
+  $('#ttl').textContent=cur.title;$('#script').innerHTML='';$('#src').innerHTML='';
+  $('#play').disabled=true;$('#note').textContent='Writing your tour…';show(true);
+  const mine=cur;let r=null;
+  try{const x=await fetch('/api/tour?title='+encodeURIComponent(cur.title)+'&lang='+lang);if(x.ok)r=await x.json()}catch(e){}
+  if(cur!==mine)return;
+  const ai=!!(r&&r.chapters&&r.chapters.length);
+  chs=ai?r.chapters:[{title:'The story',cue:'',text:script(cur).join(' ')}];
+  $('#note').textContent=ai?'':'Story mode isn’t available right now, so this is the Wikipedia introduction.';
+  flat();draw();$('#play').disabled=false;
+  $('#src').innerHTML='Source: <a href="'+esc(cur.url)+'" target="_blank" rel="noopener">'+esc(cur.title)+' on Wikipedia</a> (CC BY-SA 4.0).'+(ai?' Retold by AI using only facts from the article; it can still make mistakes.':'');
+}
+function show(d){$('#detail').hidden=!d;$('#list').hidden=d;$('#msg').hidden=d}
+
+function hi(i){document.querySelectorAll('#script span').forEach(s=>s.classList.toggle('on',+s.dataset.i===i))}
+function next(){
+  if(!playing)return;
+  if(idx>=sents.length){stop();return}
+  hi(idx);const el=document.querySelector('#script span[data-i="'+idx+'"]');if(el)el.scrollIntoView({block:'center',behavior:'smooth'});
+  const t=tok,u=new SpeechSynthesisUtterance(sents[idx].t);
+  u.lang=lang;u.rate=.95;u.onend=()=>{if(t===tok&&playing){idx++;next()}};u.onerror=()=>{if(t===tok)stop()};
+  speechSynthesis.speak(u);
+}
+function play(from){
+  if(!('speechSynthesis' in window)){alert('This browser can’t read text aloud.');return}
+  stop();tok++;playing=true;idx=from||0;$('#play').textContent='Stop tour';next();
+}
+function stop(){
+  playing=false;tok++;if('speechSynthesis' in window)speechSynthesis.cancel();
+  $('#play').textContent='Play tour';hi(-1);
+}
+
+let chs=[];
+const SPLIT=/(?<=[.!?])\s+(?=[\p{Lu}0-9"“¿¡])/u;
+function flat(){sents=[];chs.forEach((c,ci)=>String(c.text).split(SPLIT).forEach(t=>{t=t.trim();if(t)sents.push({c:ci,t})}))}
+function draw(){let i=0;$('#script').innerHTML=chs.map((c,ci)=>{const sp=sents.filter(s=>s.c===ci).map(s=>'<span data-i="'+(i++)+'">'+esc(s.t)+'</span> ').join('');return '<button class="chb" data-c="'+ci+'">'+(ci+1)+'. '+esc(c.title||'Chapter')+'</button>'+(c.cue?'<p class="cue">'+esc(c.cue)+'</p>':'')+'<p>'+sp+'</p>'}).join('')}
+$('#script').onclick=e=>{const b=e.target.closest('.chb');if(b)play(sents.findIndex(s=>s.c===+b.dataset.c))};
+$('#loc').onclick=locate;
+$('#here').onclick=()=>{const c=map.getCenter();search(c.lat,c.lng)};
+$('#lang').onchange=e=>{lang=e.target.value;const c=map.getCenter();search(c.lat,c.lng)};
+$('#list').onclick=e=>{const b=e.target.closest('.pl');if(b)pick(+b.dataset.id)};
+$('#back').onclick=()=>{stop();show(false)};
+$('#play').onclick=()=>playing?stop():play();
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
